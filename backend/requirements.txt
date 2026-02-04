@@ -1,28 +1,20 @@
-# Data handling
-pandas>=2.0.3
-numpy>=1.26.5
+# Core dependencies
+pandas>=3.0.0
+numpy>=2.4.1
 
-# Plotting
-matplotlib>=3.9.1
-seaborn>=0.12.2  # optional, for nicer visuals
+# Technical Analysis (compatible version for Python 3.14)
+ta==0.11.0
 
-# YAML config parsing
-PyYAML>=6.0
+# Plotting & Visualization
+matplotlib>=3.10.8
+seaborn>=0.13.2
 
-# Logging / pretty printing
-loguru>=0.7.0  # optional, better logging than default
+# Config & Logging
+PyYAML>=6.0.3
+loguru>=0.7.3
 
-# MT5 integration (if you plan to use MetaTrader API)
-MetaTrader5>=5.0.37
+# MetaTrader 5 integration
+MetaTrader5>=5.0.5572
 
-# Backtesting helpers
-ta>=0.12.0  # Technical Analysis indicators (optional)
-
-# Date/time parsing
-python-dateutil>=2.9.2
-
-# Environment variables
-python-dotenv>=1.1.1
-
-# For testing
-pytest>=8.3.2
+# Optional: Jupyter for experimentation (not required)
+jupyterlab>=4.2.3
