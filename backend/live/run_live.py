@@ -1,102 +1,107 @@
 # backend/live/run_live.py
 
-import time
-import logging
 import pandas as pd
-
+import logging
+import time
+import os
 from live.mt5_connector import MT5Connector
-from live.heartbeat import Heartbeat
-from execution.mt5_executor import MT5Executor
-from risk.risk_manager import RiskManager
-from risk.kill_switch import KillSwitch
 from core.regime_detector import RegimeDetector
 from core.feature_engineer import FeatureEngineer
 from core.signal_generator import SignalGenerator
-from core.validator import Validator
+from risk.risk_manager import RiskManager
+from risk.kill_switch import KillSwitch
 
+# ---------------------------
+# Config
+# ---------------------------
+MODE = "paper"  # "paper" or "live"
+SYMBOLS = ["XAUUSD", "DXY"]
+TIMEFRAME = "15min"
+CANDLES = 200
+
+ACCOUNT_EQUITY = 100000
+RISK_PER_TRADE = 0.01
+MAX_DRAWDOWN = 0.2
+MIN_EXPECTANCY = 0.1
+
+# ---------------------------
+# Setup logging
+# ---------------------------
+logs_path = "logs"
+os.makedirs(logs_path, exist_ok=True)
 logging.basicConfig(
+    filename=f"{logs_path}/run_live.log",
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    format="%(asctime)s,%(message)s"
 )
+logger = logging.getLogger("RunLive")
 
-class LiveTradingSystem:
-    def __init__(self, symbols=["XAUUSD"], account_equity=100000):
-        self.symbols = symbols
+# ---------------------------
+# Initialize modules
+# ---------------------------
+connector = MT5Connector(mode=MODE)
+regime_detector = RegimeDetector(vol_window=100)
+feature_engineer = FeatureEngineer()
+signal_generator = SignalGenerator()
+risk_manager = RiskManager(account_equity=ACCOUNT_EQUITY, risk_per_trade=RISK_PER_TRADE)
+kill_switch = KillSwitch(max_drawdown_pct=MAX_DRAWDOWN, min_expectancy=MIN_EXPECTANCY)
 
-        # Connectors
-        self.connector = MT5Connector(mode="paper", symbols=symbols)
-        self.executor = MT5Executor(mode="paper")
-        self.risk_manager = RiskManager(account_equity=account_equity)
-        self.kill_switch = KillSwitch(max_drawdown_pct=0.2, min_expectancy=0.1)
-        self.heartbeat = Heartbeat(interval_minutes=15)  # H15 time frame
+equity = ACCOUNT_EQUITY
+kill_switch.reset(equity)
 
-        # Core
-        self.regime_detector = RegimeDetector(vol_window=100)
-        self.feature_engineer = FeatureEngineer()
-        self.signal_generator = SignalGenerator()
-        self.validator = Validator()
+# ---------------------------
+# Main live/paper trading loop
+# ---------------------------
+while True:
+    for symbol in SYMBOLS:
+        # Fetch recent candles
+        df = connector.get_recent_data(symbol, timeframe=TIMEFRAME, n=CANDLES)
 
-        # Initialize
-        self.kill_switch.reset(account_equity)
+        # Detect market regime
+        df = regime_detector.detect(df)
 
-    def run(self):
-        logging.info("Starting live trading loop...")
-        while True:
-            if self.heartbeat.check_time():
-                logging.info("Heartbeat triggered. Fetching new data and evaluating trades...")
+        # Compute features
+        df = feature_engineer.compute_features(df)
 
-                for symbol in self.symbols:
-                    # Simulated market data fetch
-                    df = self._get_market_data(symbol)
-                    df = self.feature_engineer.add_features(df)
-                    df = self.regime_detector.detect(df)
+        # Generate signals
+        signals = signal_generator.generate(df)
 
-                    signal = self.signal_generator.generate(df)
-                    if not self.validator.validate(signal):
-                        logging.info(f"Signal for {symbol} invalid. Skipping trade.")
-                        continue
+        # Latest candle only
+        latest_signal = signals.iloc[-1]
+        direction = latest_signal['signal']
+        price = df['close'].iloc[-1]
+        atr = df['atr'].iloc[-1]
 
-                    # Apply kill switch checks
-                    if not self.kill_switch.is_system_active(self.risk_manager.equity, expectancy=0.15):
-                        logging.warning("Kill switch triggered. Stopping trading.")
-                        return
+        if direction == 0:
+            continue  # no trade
 
-                    # Calculate position sizing
-                    entry_price = df['xau_close'].iloc[-1]
-                    atr = df['atr'].iloc[-1]
-                    direction = signal['direction']
-                    sl, tp = self.risk_manager.apply_sl_tp(entry_price, direction, atr)
-                    size = self.risk_manager.calculate_position_size(entry_price, sl)
+        # Stop-loss / take-profit
+        sl, tp = risk_manager.apply_sl_tp(price, direction, atr)
 
-                    if size > 0:
-                        trade = self.executor.send_order(symbol, direction, size, entry_price, sl, tp)
-                        logging.info(f"Trade executed: {trade}")
+        # Position size
+        size = risk_manager.calculate_position_size(price, sl)
 
-                logging.info("Cycle complete. Waiting for next heartbeat...")
-            else:
-                # Sleep 1 min to reduce CPU usage
-                time.sleep(60)
+        # Kill switch check
+        if not kill_switch.is_system_active(equity, expectancy=0.2):  # dummy expectancy
+            logger.warning(f"{symbol},KILL_SWITCH_TRIGGERED,Equity={equity}")
+            continue
 
-    def _get_market_data(self, symbol):
-        """
-        Placeholder: fetch latest H15 OHLCV data
-        For now, simulate random prices.
-        """
-        import numpy as np
-        periods = 100
-        close = 1900 + np.random.randn(periods).cumsum()
-        high = close + np.random.rand(periods)
-        low = close - np.random.rand(periods)
-        open_ = close - np.random.randn(periods)
-        df = pd.DataFrame({
-            "open": open_,
-            "high": high,
-            "low": low,
-            "xau_close": close
-        })
-        return df
+        # Send order
+        try:
+            trade = connector.send_order(symbol, direction, size, price, sl, tp)
+        except Exception as e:
+            logger.error(f"Trade failed for {symbol}: {e}")
+            continue
 
+        # Update equity (simulate PnL in paper mode)
+        if MODE == "paper":
+            pnl = (trade['entry_price'] - price) * direction * size
+            equity += pnl
 
-if __name__ == "__main__":
-    system = LiveTradingSystem(symbols=["XAUUSD", "DXY"], account_equity=100000)
-    system.run()
+        # Log trade
+        logger.info(
+            f"{symbol},{direction},{size},{price},{sl},{tp},{equity},{trade['status']}"
+        )
+
+    print(f"[{MODE.upper()} MODE] Waiting for next candle... Current equity: {equity:.2f}")
+    time.sleep(15 * 60)  # 15 minutes

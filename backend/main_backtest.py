@@ -1,80 +1,71 @@
+# backend/main_backtest.py
+
 import pandas as pd
-import numpy as np
+import os
+from backtest.backtester import Backtester
+from backtest.performance_audit import PerformanceAudit
 from core.regime_detector import RegimeDetector
 from core.feature_engineer import FeatureEngineer
 from core.signal_generator import SignalGenerator
-from core.validator import Validator
-from execution.virtual_broker import VirtualBroker
+from risk.risk_manager import RiskManager
+from risk.kill_switch import KillSwitch
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-INITIAL_EQUITY = 100_000
-VOL_WINDOW = 96  # ~1 day of M15 candles
-MAX_VOL_PCT = 0.95
-RISK_PER_TRADE = 0.01  # 1% equity
+# ---------------------------
+# Config
+# ---------------------------
+SYMBOLS = ["XAUUSD", "DXY"]
+TIMEFRAME = "15min"
+HISTORICAL_CANDLES = 1000
 
-# -----------------------------
-# LOAD DATA
-# -----------------------------
-df = pd.read_csv('data/raw/xauusd_m15.csv', parse_dates=['datetime'])
-df = df.sort_values('datetime').reset_index(drop=True)
+ACCOUNT_EQUITY = 100000
+RISK_PER_TRADE = 0.01
+MAX_DRAWDOWN = 0.2
+MIN_EXPECTANCY = 0.1
 
-# -----------------------------
-# INIT SYSTEM MODULES
-# -----------------------------
-regime_detector = RegimeDetector(vol_window=VOL_WINDOW)
+# ---------------------------
+# Initialize modules
+# ---------------------------
+regime_detector = RegimeDetector(vol_window=100)
 feature_engineer = FeatureEngineer()
 signal_generator = SignalGenerator()
-validator = Validator(max_vol_pct=MAX_VOL_PCT)
-broker = VirtualBroker(initial_equity=INITIAL_EQUITY)
+risk_manager = RiskManager(account_equity=ACCOUNT_EQUITY, risk_per_trade=RISK_PER_TRADE)
+kill_switch = KillSwitch(max_drawdown_pct=MAX_DRAWDOWN, min_expectancy=MIN_EXPECTANCY)
 
-# System state
-state = {
-    "is_active": True,
-    "open_pos": False,
-    "equity": INITIAL_EQUITY
-}
+# ---------------------------
+# Backtest each symbol
+# ---------------------------
+for symbol in SYMBOLS:
+    # Load historical data
+    df = pd.read_csv(f"data/raw/{symbol.lower()}_h1.csv")
+    
+    # Use only last N candles
+    df = df.tail(HISTORICAL_CANDLES).copy()
 
-# -----------------------------
-# RUN BACKTEST LOOP
-# -----------------------------
-for idx in range(VOL_WINDOW, len(df)):
-    slice_df = df.iloc[:idx+1]  # Use all historical up to current candle
-    
-    # --- 1. Regime Detection ---
-    slice_df = regime_detector.detect(slice_df)
-    current_regime = slice_df.iloc[-1]['regime']
-    
-    # --- 2. Feature Engineering ---
-    slice_df = feature_engineer.apply(slice_df)
-    
-    # --- 3. Signal Generation ---
-    signal = signal_generator.generate(slice_df)
-    
-    # --- 4. Prepare signal row for validation ---
-    signal_row = slice_df.iloc[-1].copy()
-    signal_row['signal'] = signal
-    signal_row['regime'] = current_regime
-    
-    # --- 5. Validate Signal ---
-    is_valid = validator.validate(signal_row, state)
-    
-    # --- 6. Execute Virtual Trade ---
-    if is_valid:
-        trade_result = broker.execute(signal, slice_df.iloc[-1], risk_pct=RISK_PER_TRADE)
-        state['open_pos'] = False  # Reset after trade (simplified)
-        state['equity'] = broker.equity
-        status = f"TRADE EXECUTED: {trade_result}"
-    else:
-        status = "NO TRADE"
+    # Detect regime
+    df = regime_detector.detect(df)
 
-    # --- 7. Log System State ---
-    print(f"[{slice_df.iloc[-1]['datetime']}] | REGIME: {current_regime} | SIGNAL: {signal} | EQUITY: {state['equity']:.2f} | STATUS: {status}")
+    # Compute features
+    df = feature_engineer.compute_features(df)
 
-# -----------------------------
-# PERFORMANCE SUMMARY
-# -----------------------------
-print("\n--- BACKTEST COMPLETE ---")
-print(f"Final Equity: {broker.equity:.2f}")
-print(f"Total Trades: {len(broker.trade_history)}")
+    # Generate signals
+    df_signals = signal_generator.generate(df)
+
+    # Initialize Backtester
+    bt = Backtester(
+        df=df_signals,
+        risk_manager=risk_manager,
+        kill_switch=kill_switch,
+        symbol=symbol
+    )
+
+    # Run backtest
+    equity_curve = bt.run()
+
+    # Performance Audit
+    audit = PerformanceAudit(equity_curve)
+    audit.report()
+
+    # Optional: save results
+    os.makedirs("data/processed", exist_ok=True)
+    equity_curve.to_csv(f"data/processed/{symbol.lower()}_equity_curve.csv", index=False)
+    print(f"Backtest complete for {symbol}. Equity curve saved.")

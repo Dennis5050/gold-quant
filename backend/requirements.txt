@@ -1,8 +1,28 @@
-MetaTrader5
-pandas
-numpy
-pyyaml
-matplotlib
-seaborn
-python-dotenv
-scipy
+# Data handling
+pandas>=2.0.3
+numpy>=1.26.5
+
+# Plotting
+matplotlib>=3.9.1
+seaborn>=0.12.2  # optional, for nicer visuals
+
+# YAML config parsing
+PyYAML>=6.0
+
+# Logging / pretty printing
+loguru>=0.7.0  # optional, better logging than default
+
+# MT5 integration (if you plan to use MetaTrader API)
+MetaTrader5>=5.0.37
+
+# Backtesting helpers
+ta>=0.12.0  # Technical Analysis indicators (optional)
+
+# Date/time parsing
+python-dateutil>=2.9.2
+
+# Environment variables
+python-dotenv>=1.1.1
+
+# For testing
+pytest>=8.3.2
