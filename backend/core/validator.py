@@ -1,61 +1,38 @@
+# backend/core/validator.py
+
 import pandas as pd
+import numpy as np
 
 class Validator:
     """
-    Strict Trade Validator (Sniper Mode)
-    Checks if a signal is allowed based on multiple criteria:
-        - Global expectancy
-        - Regime expectancy
-        - Volatility percentile
-        - Open positions
+    Simple validator for signals and data integrity.
     """
 
-    def __init__(self, max_vol_pct=0.95):
-        self.max_vol_pct = max_vol_pct
-
-    def validate(self, signal_row, state):
+    def validate(self, data: pd.DataFrame, state: dict):
         """
-        Parameters:
-            signal_row : pd.Series
-                Must contain ['signal', 'regime', 'vol_pct']
-            state : dict
-                Must contain keys: 'is_active', 'open_pos'
-        
-        Returns:
-            bool : True if trade is allowed, False otherwise
+        Validates signals based on regime and other conditions.
+        Args:
+            data: DataFrame containing 'signal' and 'regime'
+            state: dictionary to maintain any validation state
         """
+        df = data.copy()
 
-        # --- Kill Switch Check ---
-        if not state.get('is_active', True):
-            return False
+        # Ensure necessary columns exist
+        required_cols = ['signal', 'regime']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing column '{col}' for validation")
 
-        # --- Regime Check ---
-        regime = signal_row['regime']
-        if regime == 2:
-            # Chaos regime: block all trades
-            return False
+        # --- Vectorized validation ---
+        # In chaos regime (2), signals should be flat (0)
+        chaos_mask = df['regime'] == 2
+        if chaos_mask.any():
+            print(f"Validator: {chaos_mask.sum()} rows in chaos regime. Setting signals to 0.")
+            df.loc[chaos_mask, 'signal'] = 0
 
-        # --- Volatility Check ---
-        vol_pct = signal_row['vol_pct']
-        if vol_pct > self.max_vol_pct:
-            return False
+        # You can add more validation rules here...
+        # Example: clamp signals to allowed set [-1, 0, 1]
+        df['signal'] = df['signal'].clip(-1, 1)
 
-        # --- Open Position Check ---
-        if state.get('open_pos', False):
-            return False
-
-        # --- Signal Validity ---
-        if signal_row['signal'] == 0:
-            return False
-
-        # Passed all checks
-        return True
-
-    def batch_validate(self, df, state):
-        """
-        Apply validator across a DataFrame
-        Adds a 'valid' column (True/False)
-        """
-        df = df.copy()
-        df['valid'] = df.apply(lambda row: self.validate(row, state), axis=1)
+        print("Validator: validation complete")
         return df

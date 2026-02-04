@@ -18,34 +18,29 @@ class SignalGenerator:
         df = df.copy()
         df['signal'] = 0  # Default Flat
 
-        # --- Sniper Mode Logic by Regime ---
         for idx, row in df.iterrows():
             regime = row['regime']
             z = row['zscore']
             mom = row['mom']
             vol_pct = row['vol_pct']
 
-            # Chaos: no trades
+            # Chaos regime: no trades
             if regime == 2 or vol_pct > 0.95:
                 df.at[idx, 'signal'] = 0
                 continue
 
-            # Trend regime: look for pullbacks in the direction of momentum
+            # Trend regime: pullbacks in momentum direction
             if regime == 1:
                 if z < -self.z_thresh and mom > self.mom_thresh:
-                    df.at[idx, 'signal'] = 1  # Buy pullback
+                    df.at[idx, 'signal'] = 1  # Buy
                 elif z > self.z_thresh and mom < -self.mom_thresh:
-                    df.at[idx, 'signal'] = -1  # Sell pullback
-                else:
-                    df.at[idx, 'signal'] = 0
+                    df.at[idx, 'signal'] = -1  # Sell
 
             # Range regime: mean reversion
             elif regime == 0:
                 if z < -self.z_thresh:
-                    df.at[idx, 'signal'] = 1  # Buy low
+                    df.at[idx, 'signal'] = 1  # Buy
                 elif z > self.z_thresh:
-                    df.at[idx, 'signal'] = -1  # Sell high
-                else:
-                    df.at[idx, 'signal'] = 0
+                    df.at[idx, 'signal'] = -1  # Sell
 
         return df[['zscore', 'mom', 'vol_pct', 'regime', 'signal']]
