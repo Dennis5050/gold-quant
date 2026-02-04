@@ -1,17 +1,20 @@
 # backend/execution/__init__.py
 
 """
-Execution module for Gold-Quant system.
+Execution package.
 
-This module handles order execution, trade logging, and virtual/backtest simulation.
-It includes:
-- mt5_executor.py : real/paper MT5 order sending
-- virtual_broker.py : backtest or paper trade simulation
-- trade_logger.py : logging trades and rejected orders
+Modules:
+- mt5_executor: handles live/paper order execution
+- virtual_broker: backtest or paper trade simulation
+- trade_logger: logging trades and rejections
 """
 
+from .mt5_executor import MT5Executor
+from .virtual_broker import VirtualBroker
+from .trade_logger import TradeLogger
+
 __all__ = [
-    "mt5_executor",
-    "virtual_broker",
-    "trade_logger"
+    "MT5Executor",
+    "VirtualBroker",
+    "TradeLogger"
 ]
