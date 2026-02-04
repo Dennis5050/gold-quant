@@ -3,6 +3,7 @@
 import random
 import time
 import logging
+from .trade_logger import TradeLogger
 
 class MT5Executor:
     """
@@ -26,7 +27,18 @@ class MT5Executor:
         tp: take profit
         """
         if self.mode == "paper":
-            return self._simulate_order(symbol, direction, volume, price, sl, tp)
+            trade = self._simulate_order(symbol, direction, volume, price, sl, tp)
+            # Log the trade
+            TradeLogger.log_trade({
+                "symbol": trade["symbol"],
+                "direction": "BUY" if direction == 1 else "SELL",
+                "size": volume,
+                "entry": trade["entry_price"],
+                "sl": sl,
+                "tp": tp,
+                "status": trade["status"],
+            })
+            return trade
         else:
             # In future, integrate with MT5 API here
             raise NotImplementedError("Live mode not implemented yet")
@@ -42,7 +54,7 @@ class MT5Executor:
         slippage = market_price * random.uniform(-0.0002, 0.0002)
         executed_price = market_price + slippage
 
-        # 3. Log the simulated trade
+        # 3. Log the simulated trade internally
         self.logger.info(
             f"[SIM] {symbol} | {'BUY' if direction==1 else 'SELL'} | "
             f"Volume: {volume} | Price: {executed_price:.2f} | SL: {sl} | TP: {tp}"
