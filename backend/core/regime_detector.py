@@ -40,6 +40,7 @@ class RegimeDetector:
         df.loc[mask, 'bias'] = np.where(df.loc[mask, 'sma_slope'] > 0, 1, -1)
 
         # Fill NaN bias for non-trend rows
-        df['bias'].fillna(0, inplace=True)
+        df['bias'] = df['bias'].fillna(0)
+
 
         return df

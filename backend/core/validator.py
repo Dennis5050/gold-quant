@@ -4,35 +4,34 @@ import pandas as pd
 import numpy as np
 
 class Validator:
-    """
-    Simple validator for signals and data integrity.
-    """
+    def __init__(self):
+        # You can add any state initialization here
+        pass
 
-    def validate(self, data: pd.DataFrame, state: dict):
+    def validate(self, df: pd.DataFrame, state: dict):
         """
-        Validates signals based on regime and other conditions.
-        Args:
-            data: DataFrame containing 'signal' and 'regime'
-            state: dictionary to maintain any validation state
+        Validates signals and ensures chaos regimes are neutralized.
+        Always preserves OHLC columns to prevent KeyErrors.
         """
-        df = data.copy()
 
-        # Ensure necessary columns exist
-        required_cols = ['signal', 'regime']
-        for col in required_cols:
+        # Make a copy to avoid modifying original
+        df = df.copy()
+
+        # Ensure all essential columns exist
+        for col in ["xau_open", "xau_high", "xau_low", "xau_close"]:
             if col not in df.columns:
-                raise ValueError(f"Missing column '{col}' for validation")
+                df[col] = np.nan
 
-        # --- Vectorized validation ---
-        # In chaos regime (2), signals should be flat (0)
-        chaos_mask = df['regime'] == 2
-        if chaos_mask.any():
-            print(f"Validator: {chaos_mask.sum()} rows in chaos regime. Setting signals to 0.")
-            df.loc[chaos_mask, 'signal'] = 0
+        # Example: zero out signals in chaos regimes
+        if "regime" in df.columns and "signal" in df.columns:
+            chaos_rows = df["regime"] == 2
+            if chaos_rows.any():
+                print(f"Validator: {chaos_rows.sum()} rows in chaos regime. Setting signals to 0.")
+                df.loc[chaos_rows, "signal"] = 0
 
-        # You can add more validation rules here...
-        # Example: clamp signals to allowed set [-1, 0, 1]
-        df['signal'] = df['signal'].clip(-1, 1)
+        # Fill any missing signals
+        if "signal" in df.columns:
+            df["signal"] = df["signal"].fillna(0)
 
         print("Validator: validation complete")
         return df

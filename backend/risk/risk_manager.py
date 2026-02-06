@@ -1,54 +1,65 @@
 # backend/risk/risk_manager.py
 
 class RiskManager:
-    def __init__(self, account_equity=100000, risk_per_trade=0.01):
+    """
+    Handles risk management: position sizing, stop loss (SL), take profit (TP),
+    and ensures trades conform to account equity and risk settings.
+    """
+
+    def __init__(self, account_equity=100_000, risk_per_trade=0.01):
         """
-        account_equity: total account balance
-        risk_per_trade: fraction of account to risk per trade (e.g., 0.01 = 1%)
+        Initialize the RiskManager.
+        :param account_equity: Total capital available for trading
+        :param risk_per_trade: Fraction of equity to risk per trade (0 < risk_per_trade < 1)
         """
-        self.equity = account_equity
+        self.account_equity = account_equity
         self.risk_per_trade = risk_per_trade
 
-    def calculate_position_size(self, entry_price, stop_loss_price, contract_size=1):
+    def calculate_position_size(self, entry_price, stop_loss_price):
         """
-        Returns the trade size (units/contracts) based on risk and stop-loss distance.
+        Calculate trade volume based on risk per trade and stop loss distance.
+        :param entry_price: Price at which the trade is entered
+        :param stop_loss_price: Stop loss price
+        :return: Position size (units)
         """
-        # 1. Calculate risk in price units
-        risk_price = abs(entry_price - stop_loss_price)
-        if risk_price == 0:
-            return 0  # avoid division by zero
+        if stop_loss_price == entry_price:
+            # Avoid division by zero
+            print("Warning: Stop loss equals entry price. Defaulting volume=1")
+            return 1
 
-        # 2. Dollar risk per trade
-        dollar_risk = self.equity * self.risk_per_trade
+        risk_amount = self.account_equity * self.risk_per_trade
+        sl_distance = abs(entry_price - stop_loss_price)
+        position_size = risk_amount / sl_distance
 
-        # 3. Position size
-        size = (dollar_risk / risk_price) * contract_size
-        size = max(size, 0)  # enforce non-negative
-        size = round(size, 2)  # round to 2 decimals for broker compatibility
-        return size
+        return max(position_size, 1)  # Minimum 1 unit
 
-    def apply_sl_tp(self, entry_price, direction, atr, sl_multiplier=1.5, tp_multiplier=3):
+    def apply_sl_tp(self, entry_price, direction, atr=5):
         """
-        Calculate SL and TP using ATR multiples.
-        direction: 1 = LONG, -1 = SHORT
-        atr: Average True Range
-        Returns:
-            stop_loss, take_profit, sl_distance, tp_distance
+        Return SL, TP, and distances for a trade.
+        :param entry_price: Trade entry price
+        :param direction: 1 = long/buy, -1 = short/sell
+        :param atr: Average True Range fallback for SL/TP
+        :return: sl, tp, sl_distance, tp_distance
         """
-        if direction == 1:  # LONG
-            stop_loss = entry_price - atr * sl_multiplier
-            take_profit = entry_price + atr * tp_multiplier
-        elif direction == -1:  # SHORT
-            stop_loss = entry_price + atr * sl_multiplier
-            take_profit = entry_price - atr * tp_multiplier
+        if direction not in [1, -1]:
+            raise ValueError("Direction must be 1 (buy) or -1 (sell)")
+
+        sl_distance = atr
+        tp_distance = atr * 2  # 2:1 reward:risk ratio
+
+        if direction == 1:
+            sl = entry_price - sl_distance
+            tp = entry_price + tp_distance
         else:
-            stop_loss, take_profit = entry_price, entry_price  # no trade
+            sl = entry_price + sl_distance
+            tp = entry_price - tp_distance
 
-        # Rounding for broker
-        stop_loss = round(stop_loss, 2)
-        take_profit = round(take_profit, 2)
+        return sl, tp, sl_distance, tp_distance
 
-        sl_distance = abs(entry_price - stop_loss)
-        tp_distance = abs(take_profit - entry_price)
-
-        return stop_loss, take_profit, sl_distance, tp_distance
+    def update_equity(self, pnl):
+        """
+        Update account equity based on PnL from closed trades.
+        :param pnl: Profit or loss from a trade
+        """
+        self.account_equity += pnl
+        print(f"Account equity updated: {self.account_equity:.2f}")
